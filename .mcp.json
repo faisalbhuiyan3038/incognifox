@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "firefox-rdp": {
+    "incognifox": {
       "command": "node",
-      "args": ["firefox-rdp-mcp/server.mjs"]
+      "args": ["incognifox/server.mjs"]
     }
   }
 }

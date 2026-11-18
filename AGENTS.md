@@ -1,16 +1,18 @@
 # Firefox testing guide for agents
 
+Incognifox is this repo's MCP server. It gives agents a real Firefox without automation mode.
+
 ## Pick the tool
 
 | Task | Use |
 |---|---|
-| Anything in Firefox: sites, extensions, popups, browser UI, `about:` pages, CSS and chrome JS mods, Cloudflare-protected sites | **`firefox-rdp`** (default) |
+| Anything in Firefox: sites, extensions, popups, browser UI, `about:` pages, CSS and chrome JS mods, Cloudflare-protected sites | **`incognifox`** (default) |
 | Performance profiles, logpoints, response bodies, Firefox for Android | `firefox-devtools` |
 | Chrome or Chromium behaviour | `chrome-devtools` |
 
 `firefox-devtools` runs in automation mode (`navigator.webdriver` is true). Sites using Cloudflare Turnstile, such as goplay.su, hang under it. Never use it for those sites.
 
-If a site still blocks `firefox-rdp`, stop and tell the user. Do not try to solve or bypass the challenge.
+If a site still blocks `incognifox`, stop and tell the user. Do not try to solve or bypass the challenge.
 
 ## Save tokens
 
@@ -48,28 +50,28 @@ Use the cheapest tool that answers the question:
 2. Inspect the UI with `snapshot` and `scope: "browser"`. Click it with `click` and `scope: "browser"`.
 3. Save the script to `<chromeDir>/JS/name.uc.js`, then call `browser_restart`.
 
-**fx-autoconfig setup:** it needs `config.js` and `defaults/pref/config-prefs.js` beside `firefox.exe`. Do not change the installed Firefox. Use a private copy and point `FX_RDP_BINARY` at it, then copy the loader's `profile/chrome/utils` into `chromeDir`.
+**fx-autoconfig setup:** it needs `config.js` and `defaults/pref/config-prefs.js` beside `firefox.exe`. Do not change the installed Firefox. Use a private copy and point `INCOGNIFOX_BINARY` at it, then copy the loader's `profile/chrome/utils` into `chromeDir`.
 
 ## Good to know
 
 - The striped address bar is Firefox's remote-control indicator. It is browser UI only and pages cannot see it. Ignore it when judging CSS mods.
 - Temporary extensions are reinstalled after `browser_restart`.
 - `click` and `type` work in the top-level document. For iframes, use `x` and `y` coordinates.
-- Each running server needs its own profile. For parallel agents, give each one a different `FX_RDP_PROFILE`.
-- Never point `FX_RDP_PROFILE` at a personal Firefox profile. The agent has full control of that browser.
+- Each running server needs its own profile. For parallel agents, give each one a different `INCOGNIFOX_PROFILE`.
+- Never point `INCOGNIFOX_PROFILE` at a personal Firefox profile. The agent has full control of that browser.
 
 ## Setup
 
 Requires Node 20+. Claude Code loads the server from `.mcp.json` in this repo. For other clients, register this stdio command:
 
 ```
-node M:/.systemfile/firefox-testing/firefox-rdp-mcp/server.mjs
+node M:/.systemfile/firefox-testing/incognifox/server.mjs
 ```
 
-Codex: `codex mcp add firefox-rdp -- node M:/.systemfile/firefox-testing/firefox-rdp-mcp/server.mjs`
+Codex: `codex mcp add incognifox -- node M:/.systemfile/firefox-testing/incognifox/server.mjs`
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `FX_RDP_BINARY` | Firefox executable | Installed Firefox |
-| `FX_RDP_PROFILE` | Dedicated profile folder | `~/.firefox-rdp-mcp/profile` |
-| `FX_RDP_HEADLESS` | `1` runs without a window | Off |
+| `INCOGNIFOX_BINARY` | Firefox executable | Installed Firefox |
+| `INCOGNIFOX_PROFILE` | Dedicated profile folder | `~/.incognifox/profile` |
+| `INCOGNIFOX_HEADLESS` | `1` runs without a window | Off |

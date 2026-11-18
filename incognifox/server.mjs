@@ -15,11 +15,11 @@ const DEFAULT_BINARY = {
 }[process.platform] || 'firefox';
 
 const CONFIG = {
-  binary: process.env.FX_RDP_BINARY || DEFAULT_BINARY,
-  profile: process.env.FX_RDP_PROFILE || path.join(os.homedir(), '.firefox-rdp-mcp', 'profile'),
-  headless: process.env.FX_RDP_HEADLESS === '1',
+  binary: process.env.INCOGNIFOX_BINARY || DEFAULT_BINARY,
+  profile: process.env.INCOGNIFOX_PROFILE || path.join(os.homedir(), '.incognifox', 'profile'),
+  headless: process.env.INCOGNIFOX_HEADLESS === '1',
 };
-const SHOT_DIR = path.join(os.tmpdir(), 'firefox-rdp-mcp');
+const SHOT_DIR = path.join(os.tmpdir(), 'incognifox');
 const PREFS = {
   'devtools.debugger.remote-enabled': true,
   'devtools.chrome.enabled': true,
@@ -40,8 +40,8 @@ const PREFS = {
   'app.update.enabled': false,
 };
 const LOG_LIMIT = 300;
-const ERROR_KEY = '__fxRdpError';
-const VALUE_KEY = '__fxRdpValue';
+const ERROR_KEY = '__incognifoxError';
+const VALUE_KEY = '__incognifoxValue';
 const BACKGROUND_URL = /_generated_background|background/i;
 const J = JSON.stringify;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -592,7 +592,7 @@ window.focus();await action.triggerAction(window);return true`);
     description: 'Apply browser UI CSS live. Pass css to preview it, reload_disk to re-read chrome/userChrome.css, or clear to remove what this tool applied.',
     props: { css: str('CSS text'), reload_disk: bool('Reload userChrome.css from the profile'), clear: bool('Remove applied sheets') },
     run: async ({ css, reload_disk, clear }) => browser.chrome(`const s=Cc['@mozilla.org/content/style-sheet-service;1'].getService(Ci.nsIStyleSheetService);
-const store=(globalThis.__fxRdpSheets ||= {});
+const store=(globalThis.__incognifoxSheets ||= {});
 const drop=k=>{if(store[k]){s.unregisterSheet(store[k],s.USER_SHEET);delete store[k]}};
 if(${!!clear}){drop('live');drop('disk');return 'Cleared'}
 if(${J(css ?? null)}!==null){drop('live');store.live=Services.io.newURI('data:text/css;charset=utf-8,'+encodeURIComponent(${J(css ?? '')}));s.loadAndRegisterSheet(store.live,s.USER_SHEET)}
@@ -613,7 +613,7 @@ function replyError(id, code, message) { process.stdout.write(`${J({ jsonrpc: '2
 async function handle(message) {
   const { id, method, params } = message;
   if (method === 'initialize') {
-    reply(id, { protocolVersion: params?.protocolVersion || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'firefox-rdp-mcp', version: '1.0.0' } });
+    reply(id, { protocolVersion: params?.protocolVersion || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'incognifox', version: '1.0.0' } });
   } else if (method === 'ping') {
     reply(id, {});
   } else if (method === 'tools/list') {
