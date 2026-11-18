@@ -19,9 +19,10 @@ If a site still blocks `incognifox`, stop and tell the user. Do not try to solve
 Use the cheapest tool that answers the question:
 
 1. `eval_page` or `eval_chrome`: return only the values you need, and batch several reads into one call.
-2. `page_text` with `selector` and a low `max_chars`.
-3. `snapshot` with `selector`. Take a new one only after the page changes.
-4. `screenshot`: only for visual checks. It returns a file path, so open the image only when you need to see it. Avoid `inline`.
+2. `page_text` with `query` to find text, or with `selector` and a low `max_chars`.
+3. `snapshot` with `query` or `selector`. Take a new one only after the page changes.
+4. `with_page: true` on `navigate`, `click`, `type` or `press_key`: get the resulting page in the same call instead of a separate `snapshot` and `page_text`. Add `query` to narrow it.
+5. `screenshot`: only for visual checks. It returns a file path, so open the image only when you need to see it. Avoid `inline`.
 
 - Read logs narrowly: `console_logs` with `level: "error"`, `network_log` with `filter`, and a small `limit`.
 - Pass `clear: true` once logs are read, so the next read shows only new entries.
@@ -31,7 +32,7 @@ Use the cheapest tool that answers the question:
 
 ## Workflows
 
-**Web page:** `navigate` → `snapshot` → `click` or `type` with refs → `console_logs` with `level: "error"`.
+**Web page:** `navigate` with `with_page: true` → `click` or `type` with refs and `with_page: true` → `console_logs` with `level: "error"`.
 
 **Extension:**
 1. `ext_install` with the absolute folder or `.xpi` path. It returns `id` and `host`.

@@ -332,15 +332,91 @@ return true`);
 
 const browser = new Browser();
 
-const SNAPSHOT = (scope, selector, limit) => `const root=${selector ? `document.querySelector(${J(selector)})` : 'document.documentElement'};
+const SNAPSHOT = (scope, selector, limit, query = '', contentFirst = false) => `const root=${selector ? `document.querySelector(${J(selector)})` : 'document.documentElement'};
 if(!root)throw new Error('No element matches selector');
 const q='a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[onclick],[contenteditable=true]${scope === 'browser' ? ',toolbarbutton,menuitem,tab,menulist,checkbox,moz-button' : ''}';
 const path=e=>{if(e.id&&document.querySelectorAll('#'+CSS.escape(e.id)).length===1)return '#'+CSS.escape(e.id);const p=[];
 while(e&&e.nodeType===1&&e!==document.documentElement){let s=e.localName.replace(/:/g,'\\\\:');const sib=e.parentElement?[...e.parentElement.children].filter(x=>x.localName===e.localName):[];
 if(sib.length>1)s+=':nth-of-type('+(sib.indexOf(e)+1)+')';p.unshift(s);if(e.parentElement?.id){p.unshift('#'+CSS.escape(e.parentElement.id));break}e=e.parentElement}return p.join(' > ')};
 const all=[...root.querySelectorAll(q)].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0});
-const items=all.slice(0,${limit}).map(e=>({sel:path(e),role:e.getAttribute('role')||e.localName+(e.localName==='input'&&e.type?':'+e.type:''),name:(e.getAttribute('aria-label')||e.getAttribute('label')||e.innerText||e.placeholder||e.value||e.title||e.getAttribute('tooltiptext')||'').trim().replace(/\\s+/g,' ').slice(0,60)}));
-return {title:document.title,url:location.href,total:all.length,items}`;
+let rows=all.map(e=>({e,role:e.getAttribute('role')||e.localName+(e.localName==='input'&&e.type?':'+e.type:''),name:(e.getAttribute('aria-label')||e.getAttribute('label')||e.innerText||e.placeholder||e.value||e.title||e.getAttribute('tooltiptext')||'').trim().replace(/\\s+/g,' ')}));
+const needle=${J(String(query).toLowerCase())};
+if(needle)rows=rows.filter(r=>(r.role+' '+r.name).toLowerCase().includes(needle));
+if(${contentFirst}){const rank=e=>e.closest('main,article,[role=main]')?0:e.closest('nav,header,footer,aside,[role=navigation],[role=banner],[role=contentinfo]')?2:1;
+rows=rows.map((r,i)=>[rank(r.e),i,r]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(x=>x[2])}
+const items=rows.slice(0,${limit}).map(r=>({sel:path(r.e),role:r.role,name:r.name.slice(0,60)}));
+return {title:document.title,url:location.href,total:rows.length,items}`;
+
+function registerRefs(snap) {
+  browser.refs.clear();
+  const lines = snap.items.map((item, i) => {
+    browser.refs.set(`e${i + 1}`, item.sel);
+    return `e${i + 1} ${item.role} ${J(item.name)}`;
+  });
+  if (snap.total > snap.items.length) lines.push(`[${snap.total - snap.items.length} more; narrow with query or selector]`);
+  return lines.join('\n');
+}
+
+function compactLines(text) {
+  return String(text ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+function searchText(text, query, { regex = false, context = 2 } = {}) {
+  let matches;
+  if (regex) {
+    let pattern;
+    try { pattern = new RegExp(query, 'i'); } catch (error) { throw new Error(`Invalid regex: ${error.message}`); }
+    matches = (line) => pattern.test(line);
+  } else {
+    const needle = query.toLowerCase();
+    matches = (line) => line.toLowerCase().includes(needle);
+  }
+  const lines = compactLines(text);
+  const hits = lines.flatMap((line, i) => (matches(line) ? [i] : []));
+  const header = `${hits.length} matches in ${lines.length} lines`;
+  const blocks = [];
+  let end = -1;
+  for (const hit of hits) {
+    const from = Math.max(0, hit - context);
+    const to = Math.min(lines.length - 1, hit + context);
+    if (from <= end + 1 && blocks.length) blocks[blocks.length - 1].push(...lines.slice(end + 1, to + 1));
+    else blocks.push(lines.slice(from, to + 1));
+    end = Math.max(end, to);
+  }
+  return [header, ...blocks.map((block) => block.join('\n'))].join('\n--\n');
+}
+
+// The page an action produced: title, a text excerpt and the elements to act on next.
+async function pageView({ query, page_chars = 1500 }) {
+  await browser.waitLoaded();
+  const snap = await browser.page(SNAPSHOT('page', null, 30, query || '', true));
+  const parts = [`${snap.title} | ${snap.url}`];
+  if (page_chars > 0) {
+    const text = await browser.page(query ? `document.body?.innerText||''`
+      : `const m=document.querySelector('main,article,[role=main]');return ((m&&m.innerText.trim().length>200?m:document.body)?.innerText)||''`);
+    parts.push(cap(query ? searchText(text, query) : compactLines(text).join('\n'), page_chars));
+  }
+  parts.push(registerRefs(snap) || 'No interactive elements');
+  return parts.join('\n\n');
+}
+
+const PAGE_PROPS = {
+  with_page: { type: 'boolean', description: 'Also return the resulting page: title, text excerpt and element refs' },
+  query: { type: 'string', description: 'With with_page: keep only matching text and elements' },
+  page_chars: { type: 'number', description: 'With with_page: excerpt size, default 1500, 0 for none' },
+};
+
+const withPage = (run) => async (args) => {
+  const output = await run(args);
+  return args.with_page ? `${output}\n\n${await pageView(args)}` : output;
+};
+
+function listing(rows, limit, format, empty) {
+  if (!rows.length) return empty;
+  const shown = rows.slice(-limit);
+  const summary = shown.length < rows.length ? [`Showing ${shown.length} of ${rows.length}`] : [];
+  return cap([...summary, ...shown.map(format)].join('\n'));
+}
 
 const str = (description) => ({ type: 'string', description });
 const num = (description) => ({ type: 'number', description });
@@ -385,49 +461,48 @@ const TOOLS = {
   },
   navigate: {
     description: 'Load a URL in the selected tab. Accepts http(s), about:, chrome:// and moz-extension:// URLs. action can be back, forward or reload instead.',
-    props: { url: str('URL to load'), action: { type: 'string', enum: ['back', 'forward', 'reload'] }, timeout_ms: num('Load wait, default 20000') },
-    run: async ({ url, action, timeout_ms }) => {
+    props: { url: str('URL to load'), action: { type: 'string', enum: ['back', 'forward', 'reload'] }, timeout_ms: num('Load wait, default 20000'), ...PAGE_PROPS },
+    run: async (args) => {
+      const { url, action, timeout_ms } = args;
       await browser.syncWatchers();
       if (action) await browser.chrome(`gBrowser.${{ back: 'goBack', forward: 'goForward', reload: 'reload' }[action]}();return true`);
       else if (url) await browser.chrome(`gBrowser.selectedBrowser.fixupAndLoadURIString(${J(url)},{triggeringPrincipal:Services.scriptSecurityManager.getSystemPrincipal()});return true`);
       else throw new Error('Provide url or action');
-      return J(await browser.waitLoaded(timeout_ms));
+      const tab = await browser.waitLoaded(timeout_ms);
+      return args.with_page ? pageView(args) : J(tab);
     },
   },
   snapshot: {
     description: 'Compact list of visible interactive elements with refs for click and type. Prefer over screenshots.',
-    props: { scope: SCOPE, selector: str('Limit to this subtree'), max_items: num('Default 60') },
-    run: async ({ scope = 'page', selector, max_items = 60 }) => {
-      const snap = await browser.scoped(scope, SNAPSHOT(scope, selector, max_items));
-      browser.refs.clear();
-      const lines = snap.items.map((item, i) => {
-        browser.refs.set(`e${i + 1}`, item.sel);
-        return `e${i + 1} ${item.role} ${J(item.name)}`;
-      });
-      const more = snap.total > snap.items.length ? `\n[${snap.total - snap.items.length} more; narrow with selector or raise max_items]` : '';
-      return `${snap.title} | ${snap.url}\n${lines.join('\n')}${more}`;
+    props: { scope: SCOPE, selector: str('Limit to this subtree'), query: str('Keep elements whose role or name contains this'), max_items: num('Default 60') },
+    run: async ({ scope = 'page', selector, query, max_items = 60 }) => {
+      const snap = await browser.scoped(scope, SNAPSHOT(scope, selector, max_items, query || ''));
+      return `${snap.title} | ${snap.url}\n${registerRefs(snap)}`;
     },
   },
   page_text: {
-    description: 'Visible text of the page or one element.',
-    props: { selector: str('CSS selector'), max_chars: num('Default 4000') },
-    run: async ({ selector, max_chars = 4000 }) => cap(await browser.page(`const e=${selector ? `document.querySelector(${J(selector)})` : 'document.body'};if(!e)throw new Error('No element matches selector');return e.innerText`), max_chars),
+    description: 'Visible text of the page or one element. Use query to return only matching lines.',
+    props: { selector: str('CSS selector'), query: str('Text to find, case-insensitive'), regex: bool('Treat query as a regular expression'), context: num('Lines around each match, default 2'), max_chars: num('Default 4000') },
+    run: async ({ selector, query, regex, context, max_chars = 4000 }) => {
+      const text = await browser.page(`const e=${selector ? `document.querySelector(${J(selector)})` : 'document.body'};if(!e)throw new Error('No element matches selector');return e.innerText`);
+      return cap(query ? searchText(text, query, { regex, context }) : text, max_chars);
+    },
   },
   click: {
     description: 'Trusted mouse click on a ref, selector or x,y point.',
-    props: { ref: str('Ref from snapshot'), selector: str('CSS selector'), x: num('X in the scope viewport'), y: num('Y in the scope viewport'), scope: SCOPE, button: { type: 'string', enum: ['left', 'right'] }, double: bool('Double click') },
-    run: async (args) => {
+    props: { ref: str('Ref from snapshot'), selector: str('CSS selector'), x: num('X in the scope viewport'), y: num('Y in the scope viewport'), scope: SCOPE, button: { type: 'string', enum: ['left', 'right'] }, double: bool('Double click'), ...PAGE_PROPS },
+    run: withPage(async (args) => {
       const { x, y } = await browser.point(args);
       await browser.mouse(x, y, { button: args.button === 'right' ? 2 : 0, count: args.double ? 2 : 1 });
       await sleep(150);
       return 'Clicked';
-    },
+    }),
   },
   type: {
     description: 'Trusted keyboard input. Clicks the ref or selector first when given.',
-    props: { text: str('Text to type'), ref: str('Ref from snapshot'), selector: str('CSS selector'), scope: SCOPE, clear: bool('Replace existing value'), submit: bool('Press Enter afterwards') },
+    props: { text: str('Text to type'), ref: str('Ref from snapshot'), selector: str('CSS selector'), scope: SCOPE, clear: bool('Replace existing value'), submit: bool('Press Enter afterwards'), ...PAGE_PROPS },
     required: ['text'],
-    run: async (args) => {
+    run: withPage(async (args) => {
       if (args.ref || args.selector) {
         const { x, y } = await browser.point(args);
         await browser.mouse(x, y);
@@ -437,13 +512,13 @@ const TOOLS = {
       await browser.keys([...args.text]);
       if (args.submit) await browser.keys(['Enter']);
       return 'Typed';
-    },
+    }),
   },
   press_key: {
     description: 'Press a key such as Enter, Escape, Tab, ArrowDown or a letter, with optional modifiers.',
-    props: { key: str('Key name'), modifiers: { type: 'array', items: { type: 'string', enum: ['Control', 'Shift', 'Alt', 'Meta'] } } },
+    props: { key: str('Key name'), modifiers: { type: 'array', items: { type: 'string', enum: ['Control', 'Shift', 'Alt', 'Meta'] } }, ...PAGE_PROPS },
     required: ['key'],
-    run: async ({ key, modifiers = [] }) => { await browser.keys([key], modifiers); return 'Pressed'; },
+    run: withPage(async ({ key, modifiers = [] }) => { await browser.keys([key], modifiers); return 'Pressed'; }),
   },
   wait_for: {
     description: 'Wait until a selector or text appears on the page.',
@@ -493,7 +568,7 @@ const bmp=await bc.currentWindowGlobal.drawSnapshot(new DOMRect(0,0,w,h),1,'whit
       const { id } = await browser.currentTab();
       const rows = (browser.logs.get(id) || []).filter((m) => (!level || m.level === level) && (!filter || m.text.includes(filter)));
       if (clear) browser.logs.delete(id);
-      return cap(rows.slice(-limit).map((m) => `[${m.level}] ${m.text} (${m.source})`).join('\n') || 'No messages');
+      return listing(rows, limit, (m) => `[${m.level}] ${m.text} (${m.source})`, 'No messages');
     },
   },
   network_log: {
@@ -503,7 +578,7 @@ const bmp=await bc.currentWindowGlobal.drawSnapshot(new DOMRect(0,0,w,h),1,'whit
       const { id } = await browser.currentTab();
       const rows = (browser.requests.get(id) || []).filter((r) => !filter || r.url.includes(filter));
       if (clear) browser.requests.delete(id);
-      return cap(rows.slice(-limit).map((r) => `${r.status} ${r.method} ${r.url.slice(0, 160)}`).join('\n') || 'No requests');
+      return listing(rows, limit, (r) => `${r.status} ${r.method} ${r.url.slice(0, 160)}`, 'No requests');
     },
   },
   ext_list: {
