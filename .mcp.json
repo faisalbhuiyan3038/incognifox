@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "firefox-rdp": {
+      "command": "node",
+      "args": ["firefox-rdp-mcp/server.mjs"]
+    }
+  }
+}

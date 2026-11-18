@@ -1,0 +1,9 @@
+{
+  "name": "firefox-rdp-mcp",
+  "version": "1.0.0",
+  "description": "MCP server that drives a real Firefox over the DevTools debugger server, without automation mode.",
+  "type": "module",
+  "private": true,
+  "bin": { "firefox-rdp-mcp": "server.mjs" },
+  "engines": { "node": ">=20" }
+}
